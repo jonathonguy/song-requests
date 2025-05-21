@@ -134,180 +134,54 @@
         <button id="refreshQueueBtn" style="margin-top:10px; background-color: #3498db;">Refresh Queue</button>
     </div>
 
-    <script>
-        // !!! IMPORTANT: PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE !!!
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyzUL91-FE_Yn5Ozq3gL4ozeVKzwuWGWoVtL2t5-56xvkiqqE6mIoDg7dcF-hTE0w94/exec"; // <<< PASTE YOUR URL HERE
+<script>
+    // !!! IMPORTANT: PASTE YOUR ABSOLUTELY LATEST NEW DEPLOYMENT URL HERE !!!
+    const SCRIPT_URL = "YOUR_LATEST_NEW_DEPLOYMENT_APPS_SCRIPT_URL_HERE"; // <<< PASTE YOUR VERY LATEST URL
 
-        const setlistContainer = document.getElementById('setlistContainer');
-        const searchInput = document.getElementById('searchSong');
-        const requestForm = document.getElementById('requestForm');
-        const songTitleInput = document.getElementById('songTitle');
-        const requesterNameInput = document.getElementById('requesterName');
-        const requestQueueContainer = document.getElementById('requestQueueContainer');
-        const loadingMessage = document.getElementById('loadingMessage');
-        const errorMessage = document.getElementById('errorMessage');
-        const successMessage = document.getElementById('successMessage');
-        const refreshQueueBtn = document.getElementById('refreshQueueBtn');
+    const testButton = document.createElement('button');
+    testButton.textContent = "Test POST Request";
+    document.body.appendChild(testButton);
 
-        let fullSetlist = [];
+    testButton.addEventListener('click', async () => {
+        console.log("Attempting POST to:", SCRIPT_URL);
+        alert("Attempting POST. Check Developer Console Network Tab and Apps Script Executions Log.");
 
-        function showMessage(type, text) {
-            loadingMessage.classList.add('hidden');
-            errorMessage.classList.add('hidden');
-            successMessage.classList.add('hidden');
-
-            const el = type === 'error' ? errorMessage : (type === 'success' ? successMessage : loadingMessage);
-            el.textContent = text;
-            el.classList.remove('hidden');
-
-            if (type === 'success' || type === 'error') {
-                setTimeout(() => el.classList.add('hidden'), 5000);
-            }
-        }
-
-        async function fetchSetlist() {
-            showMessage('loading', 'Fetching song list...');
-            try {
-                const response = await fetch(`${SCRIPT_URL}?action=getSetlist`);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
-
-                if (data.error) throw new Error(data.error);
-
-                fullSetlist = data;
-                renderSetlist(fullSetlist);
-                loadingMessage.classList.add('hidden');
-            } catch (error) {
-                console.error("Error fetching setlist:", error);
-                showMessage('error', `Failed to load setlist: ${error.message}. Please try refreshing.`);
-                 setlistContainer.innerHTML = '<p style="color:red;">Could not load setlist. You can still type song requests below.</p>';
-            }
-        }
-
-        function renderSetlist(songsToRender) {
-            setlistContainer.innerHTML = '';
-            if (songsToRender.length === 0 && searchInput.value) {
-                setlistContainer.innerHTML = '<p>No songs match your search. You can still type your request below.</p>';
-                return;
-            }
-            if (songsToRender.length === 0 && !searchInput.value) {
-                 setlistContainer.innerHTML = '<p>Setlist is loading or not available. You can still type song requests below.</p>';
-                return;
-            }
-
-            songsToRender.forEach(song => {
-                const songDiv = document.createElement('div');
-                songDiv.classList.add('song-item');
-                songDiv.innerHTML = `
-                    <div>
-                        <span class="song-title">${song.title}</span><br>
-                        <span class="song-artist">${song.artist || 'Unknown Artist'}</span>
-                    </div>
-                    <span>▶️</span>`;
-                songDiv.addEventListener('click', () => {
-                    songTitleInput.value = `${song.title} - ${song.artist || ''}`.trim();
-                    songTitleInput.focus();
-                });
-                setlistContainer.appendChild(songDiv);
+        try {
+            const response = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                mode: 'cors',
+                cache: 'no-cache',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                redirect: 'follow',
+                body: JSON.stringify({ action: "addRequest", song: "Test Song from Minimal Script", name: "Minimal Test" })
             });
+
+            console.log("Fetch response status:", response.status);
+            const result = await response.json();
+            console.log("Fetch result:", result);
+            alert("Response received: " + JSON.stringify(result));
+
+        } catch (error) {
+            console.error("Error during minimal POST test:", error);
+            alert("Error during minimal POST test: " + error.toString());
         }
+    });
 
-        searchInput.addEventListener('input', () => {
-            const searchTerm = searchInput.value.toLowerCase();
-            const filteredSongs = fullSetlist.filter(song =>
-                song.title.toLowerCase().includes(searchTerm) ||
-                (song.artist && song.artist.toLowerCase().includes(searchTerm))
-            );
-            renderSetlist(filteredSongs);
-        });
-
-        requestForm.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const song = songTitleInput.value.trim();
-            const name = requesterNameInput.value.trim();
-
-            if (!song || !name) {
-                showMessage('error', "Please enter both song title and your name.");
-                return;
-            }
-
-            showMessage('loading', 'Submitting your request...');
-            try {
-                const response = await fetch(SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'cors',
-                    cache: 'no-cache',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    redirect: 'follow',
-                    body: JSON.stringify({ action: "addRequest", song: song, name: name })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    showMessage('success', result.message || "Request submitted successfully!");
-                    songTitleInput.value = '';
-                    fetchRequestQueue();
-                } else {
-                    throw new Error(result.message || "Failed to submit request.");
-                }
-            } catch (error) {
-                console.error("Error submitting request:", error);
-                showMessage('error', `Submission failed: ${error.message}. Please try again.`);
-            }
-        });
-
-        async function fetchRequestQueue() {
-            try {
-                const response = await fetch(`${SCRIPT_URL}?action=getRequests&cacheBust=${new Date().getTime()}`);
-                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const data = await response.json();
-
-                if (data.error) throw new Error(data.error);
-
-                renderRequestQueue(data);
-                if (loadingMessage.textContent.includes('queue')) {
-                    loadingMessage.classList.add('hidden');
-                }
-            } catch (error) {
-                console.error("Error fetching request queue:", error);
-                 requestQueueContainer.innerHTML = '<p style="color:red;">Could not load request queue. Will retry.</p>';
-            }
+    // Test GET (to see if doGet still logs)
+    async function testGet() {
+        try {
+            console.log("Attempting GET to:", SCRIPT_URL + "?action=getSetlist");
+            const r = await fetch(SCRIPT_URL + "?action=getSetlist");
+            console.log("GET response status:", r.status);
+            const d = await r.json();
+            console.log("GET data:", d);
+        } catch(e) {
+            console.error("Error in testGet:", e);
         }
-
-        function renderRequestQueue(requests) {
-            requestQueueContainer.innerHTML = '';
-            if (requests.length === 0) {
-                requestQueueContainer.innerHTML = '<p>No songs requested yet. Be the first!</p>';
-                return;
-            }
-            requests.forEach(req => {
-                const requestDiv = document.createElement('div');
-                requestDiv.classList.add('request-item');
-                // Simple display, can be enhanced (e.g., human-readable timestamp)
-                const requestTime = new Date(req.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                requestDiv.innerHTML = `
-                    <div>
-                        <span class="song-title">${req.song}</span><br>
-                        <span class="requester-name">Requested by: ${req.name}</span>
-                    </div>
-                    <span style="font-size:0.8em; color: #888;">${requestTime}</span>`;
-                requestQueueContainer.appendChild(requestDiv);
-            });
-        }
-
-        refreshQueueBtn.addEventListener('click', function(){
-            showMessage('loading', 'Refreshing request queue...');
-            fetchRequestQueue();
-        });
-
-        // Initial data load
-        fetchSetlist();
-        fetchRequestQueue();
-
-        setInterval(fetchRequestQueue, 30000);
-    </script>
+    }
+    // testGet(); // You can uncomment this to see if doGet still logs correctly
+</script>
 </body>
 </html>
