@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piano Bar Song Requests</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 15px;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #c0392b; /* A piano-ish red */
+            text-align: center;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="search"] {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #c0392b;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #a5281b;
+        }
+        #setlistContainer, #requestQueueContainer {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            padding: 10px;
+            margin-bottom: 20px;
+            background-color: #f9f9f9;
+        }
+        .song-item, .request-item {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer; /* Retained for setlist items */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .request-item {
+            cursor: default; /* No action on clicking a queued request */
+        }
+        .song-item:last-child, .request-item:last-child {
+            border-bottom: none;
+        }
+        .song-item:hover {
+            background-color: #e9e9e9;
+        }
+        .song-title { font-weight: bold; }
+        .song-artist { font-size: 0.9em; color: #555; }
+        .requester-name { font-style: italic; color: #777; font-size: 0.9em; }
+        .offlist-note {
+            font-size: 0.9em;
+            color: #555;
+            margin-top: -10px; /* Pulls it closer to the input above */
+            margin-bottom: 15px; /* Space before the next label */
+            text-align: left;
+        }
+
+        #loadingMessage, #errorMessage, #successMessage {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        #loadingMessage { background-color: #e0e0e0; }
+        #errorMessage { background-color: #f8d7da; color: #721c24; }
+        #successMessage { background-color: #d4edda; color: #155724; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Song Requests</h1>
+
+        <div id="loadingMessage">Loading songs...</div>
+        <div id="errorMessage" class="hidden"></div>
+        <div id="successMessage" class="hidden"></div>
+
+        <h2>Browse Our Setlist</h2>
+        <input type="search" id="searchSong" placeholder="Search by title or artist...">
+        <div id="setlistContainer">
+            <!-- Songs will be loaded here -->
+        </div>
+
+        <h2>Make a Request</h2>
+        <form id="requestForm">
+            <label for="songTitle">Song Title:</label>
+            <input type="text" id="songTitle" name="songTitle" required>
+            <p class="offlist-note">
+                Can't find your song in the list above? Feel free to type it in anyway!
+            </p>
+
+            <label for="requesterName">Your Name:</label>
+            <input type="text" id="requesterName" name="requesterName" required>
+
+            <button type="submit">Submit Request</button>
+        </form>
+
+        <h2>Current Request Queue</h2>
+        <div id="requestQueueContainer">
+            <!-- Requested songs will be loaded here -->
+        </div>
+        <button id="refreshQueueBtn" style="margin-top:10px; background-color: #3498db;">Refresh Queue</button>
+    </div>
+
+    <script>
+        // !!! IMPORTANT: PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE !!!
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzYXXkJua7qnlLZjjdBNVuUKK3u9fewSvJ42EocyZiZIBF4qaAXKtZ-T-epEbggY-iS/exec"; // <<< PASTE YOUR URL HERE
+
+        const setlistContainer = document.getElementById('setlistContainer');
+        const searchInput = document.getElementById('searchSong');
+        const requestForm = document.getElementById('requestForm');
+        const songTitleInput = document.getElementById('songTitle');
+        const requesterNameInput = document.getElementById('requesterName');
+        const requestQueueContainer = document.getElementById('requestQueueContainer');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
+        const refreshQueueBtn = document.getElementById('refreshQueueBtn');
+
+        let fullSetlist = [];
+
+        function showMessage(type, text) {
+            loadingMessage.classList.add('hidden');
+            errorMessage.classList.add('hidden');
+            successMessage.classList.add('hidden');
+
+            const el = type === 'error' ? errorMessage : (type === 'success' ? successMessage : loadingMessage);
+            el.textContent = text;
+            el.classList.remove('hidden');
+
+            if (type === 'success' || type === 'error') {
+                setTimeout(() => el.classList.add('hidden'), 5000);
+            }
+        }
+
+        async function fetchSetlist() {
+            showMessage('loading', 'Fetching song list...');
+            try {
+                const response = await fetch(`${SCRIPT_URL}?action=getSetlist`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.error);
+
+                fullSetlist = data;
+                renderSetlist(fullSetlist);
+                loadingMessage.classList.add('hidden');
+            } catch (error) {
+                console.error("Error fetching setlist:", error);
+                showMessage('error', `Failed to load setlist: ${error.message}. Please try refreshing.`);
+                 setlistContainer.innerHTML = '<p style="color:red;">Could not load setlist. You can still type song requests below.</p>';
+            }
+        }
+
+        function renderSetlist(songsToRender) {
+            setlistContainer.innerHTML = '';
+            if (songsToRender.length === 0 && searchInput.value) {
+                setlistContainer.innerHTML = '<p>No songs match your search. You can still type your request below.</p>';
+                return;
+            }
+            if (songsToRender.length === 0 && !searchInput.value) {
+                 setlistContainer.innerHTML = '<p>Setlist is loading or not available. You can still type song requests below.</p>';
+                return;
+            }
+
+            songsToRender.forEach(song => {
+                const songDiv = document.createElement('div');
+                songDiv.classList.add('song-item');
+                songDiv.innerHTML = `
+                    <div>
+                        <span class="song-title">${song.title}</span><br>
+                        <span class="song-artist">${song.artist || 'Unknown Artist'}</span>
+                    </div>
+                    <span>▶️</span>`;
+                songDiv.addEventListener('click', () => {
+                    songTitleInput.value = `${song.title} - ${song.artist || ''}`.trim();
+                    songTitleInput.focus();
+                });
+                setlistContainer.appendChild(songDiv);
+            });
+        }
+
+        searchInput.addEventListener('input', () => {
+            const searchTerm = searchInput.value.toLowerCase();
+            const filteredSongs = fullSetlist.filter(song =>
+                song.title.toLowerCase().includes(searchTerm) ||
+                (song.artist && song.artist.toLowerCase().includes(searchTerm))
+            );
+            renderSetlist(filteredSongs);
+        });
+
+        requestForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const song = songTitleInput.value.trim();
+            const name = requesterNameInput.value.trim();
+
+            if (!song || !name) {
+                showMessage('error', "Please enter both song title and your name.");
+                return;
+            }
+
+            showMessage('loading', 'Submitting your request...');
+            try {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'cors',
+                    cache: 'no-cache',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    redirect: 'follow',
+                    body: JSON.stringify({ action: "addRequest", song: song, name: name })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showMessage('success', result.message || "Request submitted successfully!");
+                    songTitleInput.value = '';
+                    fetchRequestQueue();
+                } else {
+                    throw new Error(result.message || "Failed to submit request.");
+                }
+            } catch (error) {
+                console.error("Error submitting request:", error);
+                showMessage('error', `Submission failed: ${error.message}. Please try again.`);
+            }
+        });
+
+        async function fetchRequestQueue() {
+            try {
+                const response = await fetch(`${SCRIPT_URL}?action=getRequests&cacheBust=${new Date().getTime()}`);
+                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.error);
+
+                renderRequestQueue(data);
+                if (loadingMessage.textContent.includes('queue')) {
+                    loadingMessage.classList.add('hidden');
+                }
+            } catch (error) {
+                console.error("Error fetching request queue:", error);
+                 requestQueueContainer.innerHTML = '<p style="color:red;">Could not load request queue. Will retry.</p>';
+            }
+        }
+
+        function renderRequestQueue(requests) {
+            requestQueueContainer.innerHTML = '';
+            if (requests.length === 0) {
+                requestQueueContainer.innerHTML = '<p>No songs requested yet. Be the first!</p>';
+                return;
+            }
+            requests.forEach(req => {
+                const requestDiv = document.createElement('div');
+                requestDiv.classList.add('request-item');
+                // Simple display, can be enhanced (e.g., human-readable timestamp)
+                const requestTime = new Date(req.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                requestDiv.innerHTML = `
+                    <div>
+                        <span class="song-title">${req.song}</span><br>
+                        <span class="requester-name">Requested by: ${req.name}</span>
+                    </div>
+                    <span style="font-size:0.8em; color: #888;">${requestTime}</span>`;
+                requestQueueContainer.appendChild(requestDiv);
+            });
+        }
+
+        refreshQueueBtn.addEventListener('click', function(){
+            showMessage('loading', 'Refreshing request queue...');
+            fetchRequestQueue();
+        });
+
+        // Initial data load
+        fetchSetlist();
+        fetchRequestQueue();
+
+        setInterval(fetchRequestQueue, 30000);
+    </script>
+</body>
+</html>
